@@ -20,7 +20,7 @@ describe('shared-screen adventure flow',()=>{
 
  it('loads the guided demo, uses a real potion, rolls a die, and switches turns',async()=>{
   const user=userEvent.setup();render(<App/>);
-  expect(screen.getByText(/ALEXA\+ APP DEMO IDEA · WEB SIMULATION/i)).toBeTruthy();
+  expect(screen.getByRole('heading',{name:/THE SHATTERED BELL/i})).toBeTruthy();
   await user.click(screen.getByRole('button',{name:/load guided demo/i}));
   expect(await screen.findByRole('heading',{name:'The Wayfarer’s Rest'})).toBeTruthy();
   expect(screen.getByText('22/30 HP')).toBeTruthy();
