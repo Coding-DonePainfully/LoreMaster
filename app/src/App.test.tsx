@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import App from './App';
 import { awardMoonSeal, demoParty, makeCampaign, makeCharacter } from './game';
 import { loadCampaign, saveCampaign } from './storage';
 
-afterEach(()=>{cleanup();localStorage.clear();});
+afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();localStorage.clear();});
 beforeAll(()=>{HTMLElement.prototype.scrollIntoView=()=>{};});
 
 describe('shared-screen adventure flow',()=>{
@@ -36,6 +36,14 @@ describe('shared-screen adventure flow',()=>{
   await user.click(screen.getByRole('button',{name:/begin the adventure/i}));
   expect(await screen.findByRole('button',{name:/Rowan/})).toBeTruthy();
   expect(screen.getByText('Ranger · Lv. 1')).toBeTruthy();
+ });
+ it('allocates attributes within the 15-point budget before committing a character',async()=>{
+  const user=userEvent.setup();render(<App/>);await user.click(screen.getByRole('button',{name:/start an adventure/i}));
+  expect(screen.getByText('Stat Points Remaining: 15 / 15')).toBeTruthy();expect((screen.getByRole('button',{name:'Decrease STR'}) as HTMLButtonElement).disabled).toBe(true);
+  const strength=screen.getByRole('button',{name:'Increase STR'});for(let i=0;i<15;i++)await user.click(strength);
+  expect(screen.getByText('Stat Points Remaining: 0 / 15')).toBeTruthy();expect((strength as HTMLButtonElement).disabled).toBe(true);
+  await user.click(screen.getByRole('button',{name:/add fighter/i}));await user.click(screen.getByRole('button',{name:/begin the adventure/i}));
+  expect(loadCampaign()?.characters[0]).toMatchObject({attributes:{str:20,dex:5,con:5,int:5,wis:5,cha:5},statPointsSpent:15,maxHp:30});
  });
 
  it('asks before replacing a saved campaign',async()=>{
@@ -73,6 +81,38 @@ describe('shared-screen adventure flow',()=>{
  });
 
  it('gives Mara a repeat reminder without duplicating the clue event',async()=>{
-  const campaign=makeCampaign(demoParty(),true);saveCampaign(campaign);const user=userEvent.setup();render(<App/>);const action=screen.getByRole('textbox',{name:'Your action'});await user.type(action,'Ask Mara about the bell{Enter}');await screen.findByText(/Mara lowers her voice/);await user.type(screen.getByRole('textbox',{name:'Your action'}),'Ask Mara about the bell{Enter}');expect(await screen.findByText(/gentle reminder/)).toBeTruthy();const saved=loadCampaign()!;expect(saved.facts.filter(x=>x.includes('Mara says the moon seal'))).toHaveLength(1);
+  const campaign=makeCampaign(demoParty(),true);saveCampaign(campaign);const user=userEvent.setup();render(<App/>);const action=screen.getByRole('textbox',{name:'Your action'});await user.type(action,'Ask Mara about the bell{Enter}');await screen.findByText(/Mara lowers her voice/);await user.type(action,'Ask Mara about the bell{Enter}');expect(await screen.findByText(/gentle reminder/)).toBeTruthy();const saved=loadCampaign()!;expect(saved.facts.filter(x=>x.includes('Mara says the moon seal'))).toHaveLength(1);
+ });
+});
+
+describe('conversation submission guard',()=>{
+ it('executes one action when the same form submission fires twice rapidly',async()=>{
+  const campaign=makeCampaign([makeCharacter('Lyra','Bard')]);
+  const originalStories=new Set(campaign.log.filter(entry=>entry.kind==='story').map(entry=>entry.id));
+  saveCampaign(campaign);
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({available:false,model:null,reason:'offline'}),{status:200})));
+  Object.defineProperty(HTMLElement.prototype,'scrollIntoView',{value:vi.fn(),configurable:true});
+  render(<App/>);
+  const input=screen.getByRole('textbox',{name:'Your action'});
+  fireEvent.change(input,{target:{value:'look around'}});
+  const form=input.closest('form');expect(form).not.toBeNull();
+  act(()=>{fireEvent.submit(form!);fireEvent.submit(form!);});
+  await waitFor(()=>expect(loadCampaign()?.log.filter(entry=>entry.kind==='action'&&entry.text.includes('look around'))).toHaveLength(1));
+  const updated=loadCampaign();expect(updated?.log.filter(entry=>entry.kind==='story'&&!originalStories.has(entry.id))).toHaveLength(1);
+ });
+});
+
+describe('Phase 2 start modes and rules',()=>{
+ it('starts a selected adventure in Dev/Test Mode with an explicit sandbox marker',async()=>{
+  const user=userEvent.setup();render(<App/>);await user.click(screen.getByRole('button',{name:/start an adventure/i}));
+  await user.selectOptions(screen.getByLabelText('Adventure'),'gilded-masquerade');await user.selectOptions(screen.getByLabelText('Mode'),'dev');
+  await user.type(screen.getByPlaceholderText('e.g. Rowan'),'Rowan');await user.click(screen.getByRole('button',{name:/add fighter/i}));await user.click(screen.getByRole('button',{name:/begin the adventure/i}));
+  expect(await screen.findByText('[DEV SANDBOX]')).toBeTruthy();expect(screen.getByRole('heading',{name:'The Gilded Ballroom'})).toBeTruthy();
+  expect(loadCampaign()?.adventureId).toBe('gilded-masquerade');expect(loadCampaign()?.mode).toBe('dev');expect(screen.getByRole('button',{name:/simulate attack/i})).toBeTruthy();
+ });
+ it('opens read-only rules without changing the saved campaign',async()=>{
+  const campaign=makeCampaign([makeCharacter('Lyra','Bard')]);saveCampaign(campaign);const user=userEvent.setup();render(<App/>);
+  const before=JSON.stringify(loadCampaign());await user.click(screen.getByRole('button',{name:/rules/i}));
+  expect(screen.getByRole('dialog',{name:'How this table works'})).toBeTruthy();expect(screen.getByText('Combat & Initiative Order')).toBeTruthy();expect(JSON.stringify(loadCampaign())).toBe(before);
  });
 });

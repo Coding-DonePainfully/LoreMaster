@@ -1,0 +1,43 @@
+{
+  "categories": [
+    {
+      "id": "combat",
+      "title": "Combat & Initiative Order",
+      "rules": [
+        { "text": "Characters begin at 5 in each of six attributes, may spend up to 15 additional points, and cannot exceed 20. The modifier is floor((score - 10) / 2); max HP is 20 + CON × 2.", "status": "implemented" },
+        { "text": "Critical chance and percentile checks are implemented for the Stone Guardian encounter. Initiative and turn-resource helpers exist, but the current adventure encounters do not yet use an initiative queue or enforce per-turn actions, movement, reactions, cooldowns, or round resets.", "status": "planned" },
+        { "text": "Attack checks roll a fair d20 and add the acting character’s relevant modifier; the current encounter uses DC 12.", "status": "implemented" },
+        { "text": "The Stone Guardian uses authored defense 12 and flat armor reduction 1. A hit deals the weapon base damage plus the relevant derived modifier and validated bonuses, reduced by flat armor; damage cannot go below zero and HP is clamped at zero.", "status": "implemented" },
+        { "text": "Critical chance is 10% plus 0.5 percentage points per DEX above 10. A percentile roll determines criticals; critical defense is reduced by 30%, and critical damage is floor((weapon base damage + relevant modifier + bonus) × 1.5) minus armor reduction.", "status": "implemented" },
+        { "text": "Successful attacks use the equipped weapon’s authored base damage and apply validated ability bonuses. The engine updates enemy health and records the result.", "status": "implemented" },
+        { "text": "An enemy counterattack is resolved by the engine with a d20 + its defense modifier against the character’s armor class.", "status": "implemented" },
+        { "text": "Characters with 0 HP cannot act. Defeated enemies cannot attack, block travel, or be attacked again.", "status": "implemented" },
+        { "text": "Initiative rolls, a fixed combat queue, movement/action/bonus-action/reaction slots, round advancement, and round-based resource resets are not implemented in this MVP.", "status": "planned" },
+        { "text": "Saving throws and incapacitation conditions beyond 0 HP are not implemented.", "status": "planned" }
+      ]
+    },
+    {
+      "id": "checks",
+      "title": "Checks, Dice & Abilities",
+      "rules": [
+        { "text": "Ability checks roll a fair d20, add the selected attribute modifier and any valid stored bonus, then compare the total against DC 12.", "status": "implemented" },
+        { "text": "A successful check may reveal one matching, undiscovered adventure clue. A clue or reward is recorded once.", "status": "implemented" },
+        { "text": "Class abilities are defined per character, consume their listed use, and apply only their listed effect.", "status": "implemented" },
+        { "text": "The model never supplies dice results or applies mechanical effects. The engine is authoritative for rolls, damage, health, inventory, objectives, and encounter state.", "status": "implemented" }
+      ]
+    },
+    {
+      "id": "exploration",
+      "title": "Exploration & Narrative Play",
+      "rules": [
+        { "text": "The game presents the current scene and relevant discovered information. Players can ask NPCs, inspect, search, travel, use items, or ask read-only narrative questions.", "status": "implemented" },
+        { "text": "Investigation actions resolve immediately through the engine. Read-only questions and ordinary dialogue do not consume a turn or mutate state.", "status": "implemented" },
+        { "text": "Queued player choices, skip-turn actions, batch resolution, action-conflict arbitration, and combat movement costs are not implemented.", "status": "planned" },
+        { "text": "Travel follows the selected adventure's connected location graph. Ash Flats bridge checks can be bypassed by securing the bridge with one carried rope; failed exposed crossings cause a stated HP or torch cost while still reaching the node.", "status": "implemented" },
+        { "text": "Search checks are shared per adventure location. After two failures, later retries gain +2; failures do not complete objectives, and already discovered clues are returned without rerolling or duplication.", "status": "implemented" },
+        { "text": "Fire, Poison, Dazed, and Recovery ticking helpers are implemented and tested, but the current adventure encounters do not yet apply or advance these effects in play. Opportunity attacks, spell slots, and ability cooldown tracking are not implemented.", "status": "planned" },
+        { "text": "Narration follows validated engine outcomes. NPC statements are recorded separately from evidence; player theories are never promoted to facts automatically.", "status": "implemented" }
+      ]
+    }
+  ]
+}

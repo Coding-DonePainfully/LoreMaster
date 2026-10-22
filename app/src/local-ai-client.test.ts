@@ -10,6 +10,10 @@ describe('local AI client fallback',()=>{
   const fetcher=vi.fn();const result=await selectCommand('Ask Mara what she knows about the bell',c,c.activeId,true,false,fetcher);
   expect(result.command.type).toBe('ask_mara');expect(result.source).toBe('fallback');expect(result.aiFailed).toBe(false);expect(fetcher).not.toHaveBeenCalled();
  });
+ it('does not send campaign-generation requests to the model or classify them as abilities',async()=>{
+  const fetcher=vi.fn();const result=await selectCommand('Create a new, more powerful and complex story',c,c.activeId,true,true,fetcher);
+  expect(result.command).toMatchObject({type:'clarify',question:expect.stringMatching(/campaign generation is not implemented/i)});expect(fetcher).not.toHaveBeenCalled();
+ });
  it('does not ask a model to guess an ambiguous character or item reference',async()=>{
   const twoWizards=makeCampaign([makeCharacter('One','Wizard'),makeCharacter('Two','Wizard')]);const fetcher=vi.fn();const result=await selectCommand('Have the Wizard attack the guardian',twoWizards,twoWizards.activeId,true,true,fetcher);
   expect(result.command.type).toBe('clarify');expect(result.source).toBe('fallback');expect(fetcher).not.toHaveBeenCalled();
@@ -45,5 +49,14 @@ describe('local AI client fallback',()=>{
   expect(selected.source).toBe('model');
   const resolved=executeCommand(c,selected.command);
   expect(resolved.campaign).toBe(c);expect(resolved.reply).toContain('may be tied');
+ });
+ it('sends the current guardian state and recent action result for a follow-up',async()=>{
+  const recent='A loose flagstone reveals the Moon Seal beneath the chapel floor.';
+  const state={...c,sceneStep:2,guardianHp:0,facts:[...c.facts,'The stone guardian fell. The crypt stairs are open.'],log:[...c.log,{id:'last-event',kind:'story' as const,text:recent,time:new Date().toISOString()}]};
+  let posted:Record<string,unknown>|undefined;
+  const fetcher=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{posted=JSON.parse(String(init?.body));return json({proposal:{action:'narrative_question',answer:'The guardian is down; descend into the open crypt.'}});});
+  await selectCommand('What now since the guardian is dead?',state,state.activeId,true,true,fetcher);
+  const current=posted?.context as {guardianHp:number;facts:string[];recentEvents:{text:string}[]};
+  expect(current.guardianHp).toBe(0);expect(current.facts).toContain('The stone guardian fell. The crypt stairs are open.');expect(current.recentEvents.at(-1)?.text).toBe(recent);
  });
 });
