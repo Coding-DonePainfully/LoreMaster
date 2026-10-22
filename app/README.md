@@ -1,67 +1,96 @@
 # LoreMaster
 
-LoreMaster is a local, shared-screen fantasy RPG prototype. Up to four players take turns using individual characters, gear, abilities, and real dice. The included **The Shattered Bell** adventure is deterministic, so it can be demonstrated without a model account, paid service, or network connection.
+LoreMaster is a shared-screen fantasy RPG prototype for up to four players. Its local **The Shattered Bell** adventure includes character classes, inventory and equipment, dice, and a campaign saved in the browser.
 
-## Run it
+The game works without an API key, cloud service, or local LLM. The built-in game master uses deterministic local narration and application code to interpret and validate actions. Optional microphone input depends on browser support; text input always works.
 
-Install Node.js 20 or newer. From the `app/` directory:
+## Windows setup
 
-```sh
-npm install
+### 1. Install Git and Node.js
+
+1. Install **Git for Windows** from [git-scm.com/download/win](https://git-scm.com/download/win). The standard installer options are suitable for this project.
+2. Install **Node.js 24 LTS** from [nodejs.org](https://nodejs.org/en/download/). Use the Windows installer and keep its option to add Node to PATH enabled. The current test tool requires Node.js 22.12 or newer; Node 24 LTS is the recommended version.
+3. Close and reopen PowerShell, then check both installations:
+
+   ```powershell
+   git --version
+   node --version
+   npm --version
+   ```
+
+### 2. Clone the project and enter the app folder
+
+Run these commands in PowerShell. They clone the LoreMaster GitHub repository and move into the application folder:
+
+```powershell
+git clone https://github.com/Coding-DonePainfully/LoreMaster.git
+cd LoreMaster
+cd app
+```
+
+If you already have a clone, open PowerShell in that checkout and run `cd app` instead of cloning it again.
+
+### 3. Install dependencies and start LoreMaster
+
+From inside `LoreMaster\app`, run:
+
+```powershell
+npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite. Make a party with **Start an adventure**, or choose **Load guided demo** to get a four-character party with a ready-made scene. Use the suggested actions or type in the conversation field. The browser saves the latest campaign in localStorage; refreshing resumes it.
+`npm ci` installs the exact dependency versions recorded in `package-lock.json`. When Vite starts, open the local address it prints, usually [http://localhost:5173](http://localhost:5173). Keep the PowerShell window open while using the app. Press **Ctrl+C** in that window to stop the development server.
 
-To create a production build and run the focused rules tests:
+To demonstrate the adventure, select **Load guided demo** on the start screen. Campaign progress is saved in that browser's local storage; refresh the page to resume.
 
-```sh
+## Run checks and build
+
+Run these in PowerShell from `LoreMaster\app`:
+
+```powershell
 npm run typecheck
 npm test
 npm run build
-npm run preview
 ```
 
-The app has no server and requires no environment variables. Speech recognition is optional, browser-dependent, and may require a secure browser context; text input always works. Dice use `crypto.getRandomValues` with rejection sampling.
+The production build is written to `app\dist`. To serve that build locally after building, run `npm run preview` and open the URL Vite prints.
 
-## Alexa+ hackathon demo
+## Troubleshooting
 
-This app demonstrates a **simulated Alexa+ style conversational experience**: the page shows listening/processing/response states, offers microphone input when the browser supports speech recognition, and accepts the same actions by text and buttons. The local intent handler validates requests and applies game rules before the narrator responds. The visible confirmation and campaign log show the resulting state changes.
+- **`git`, `node`, or `npm` is not recognized:** finish the installer, close and reopen PowerShell, then check the versions again. If Node was already installed, rerun its installer and ensure it is added to PATH.
+- **Unsupported Node version or engine errors:** install Node.js 24 LTS and verify `node --version` reports `v24.x`. This project uses Vitest 5, which requires Node 22.12 or newer.
+- **`npm ci` reports a lockfile or dependency error:** make sure you are in `LoreMaster\app` (the folder containing `package.json` and `package-lock.json`), then retry `npm ci`. Do not delete or edit the lockfile to work around the error.
+- **PowerShell blocks `npm` because of script execution policy:** run the Windows command shim explicitly, for example `npm.cmd ci`, `npm.cmd run dev`, or `npm.cmd test`.
+- **Port 5173 is already in use:** stop the other development server, or use the alternate local URL Vite prints if it selects another port.
+- **The page is blank or stale after an update:** stop and restart the server with Ctrl+C and `npm run dev`, then refresh the page. Campaign data is stored per browser and is not synced between devices.
+- **Microphone input is unavailable:** use the text box. Speech recognition is optional and browser-dependent.
 
-LoreMaster is **not connected to Alexa+** and does not use Amazon’s Alexa+ SDK, partner-only tools, an Agent Skill, or an MCP server. The Amazon Developer Hackathon page currently describes a simulated web experience as one Alexa+ path; check the live [track rules](https://amazonappdev2026.devpost.com/) and [FAQ](https://amazonappdev2026.devpost.com/details/faqs) again before submission. The selected path must still be eligible on submission day.
+## Alexa+ hackathon demonstration
 
-## Architecture
+LoreMaster presents a **simulated Alexa+ style experience** in a browser: a conversation panel, optional speech input, text fallback, visible responses, and suggestions. The local command handler validates actions and updates structured game state before narration is shown.
 
-- `src/game.ts`: typed campaign and character state, catalog and class definitions, validated inventory operations, modifier/defense calculation, fair dice, and deterministic narration.
-- `src/App.tsx`: party setup, adventure interface, local intent routing, game actions, voice input, campaign log, and local persistence.
-- `src/styles.css`: responsive dark-fantasy interface, reduced-motion support, keyboard focus styling.
-- `src/game.test.ts`: targeted tests for dice, health boundaries, inventory operations, gear slots, classes, and modifiers.
-- `src/speech.d.ts`: small browser Speech Recognition type definitions.
+This app is **not connected to Amazon Alexa+** and does not use an official Alexa+ SDK, partner tools, Agent Skill, or MCP server. Confirm that the simulated web route is still eligible in the [official hackathon rules](https://amazonappdev2026.devpost.com/) and [FAQ](https://amazonappdev2026.devpost.com/details/faqs) before submission.
 
-The narrator is intentionally local and deterministic for demo reliability. The MVP does not send data to an external model. User text is interpreted by the local command handler; it never directly writes health or inventory. The validated operation updates the structured campaign, and the narration is appended afterward.
+## Project structure
 
-## Guided demo walkthrough
+- `src/App.tsx` — React interface, party setup, action handling, dice controls, and campaign flow.
+- `src/game.ts` — character and campaign types, class and item data, validated game operations, dice generation, and local narration.
+- `src/storage.ts` — version-checked browser local storage for campaign save and resume.
+- `src/styles.css` — responsive dark-fantasy interface.
+- `src/App.test.tsx` and `src/game.test.ts` — interface and game-rule tests.
+- `vite.config.ts` — Vite React configuration.
+- `package.json` and `package-lock.json` — scripts and pinned dependency resolution.
 
-1. From the landing screen select **Load guided demo**; if a campaign is already active, confirm replacement.
-2. Select Finn (Rogue), then use **Investigate** or type “I search the room.” The app rolls a d20 plus WIS against DC 12. A success finds the moon seal; a failure reveals muddy tracks and a complication.
-3. Inspect the pack and select an item. Use a healing potion after a character has lost health to see health and quantity update. Equip or unequip gear and inspect the character tab.
-4. Ask Mara about the bell or go to the chapel to advance the story and objectives. Use a different character to take their turn.
-5. Refresh the page. The party, scene, inventory, objectives, and chronicle resume from localStorage.
-
-The demo party starts slightly wounded so you can demonstrate a healing potion right away. To show combat, ask about the bell, travel to the chapel, and attack the guardian; each attack displays the hit roll, damage roll, enemy counterattack, and health change. You can also use the moon seal to resolve the encounter without fighting.
-
-## Rules and limitations
-
-- The rules are a small, original D&D-inspired subset, not a complete implementation of D&D or any licensed ruleset. Level-one class attributes, defense, one simple ability per class, d20 checks vs DC 12, and small damage/healing effects are implemented.
-- The deterministic story has an inn scene, investigation, and chapel encounter. It tracks guardian health; attacks roll to hit and roll weapon damage, while misses deal a small counterattack. The moon seal is a nonviolent resolution. Class abilities have one use per adventure; healing abilities restore health and other abilities grant a one-check or one-attack bonus. Conditions and a full initiative system are not implemented.
-- Local intent handling is keyword-based, so ambiguous requests need a clearer phrase. Suggested buttons and the dice/action controls provide reliable alternatives.
-- localStorage is device/browser-local, not encrypted or synced. This is a single-device prototype, with no accounts, remote saves, MCP integration, or multiplayer.
-- A default campaign can be resumed by refreshing. Starting over or loading a demo when a campaign exists prompts before replacing it.
+There is no backend service, database, environment file, or external model call required. App state is stored in the current browser's local storage; it is not encrypted or synchronized to other devices.
 
 ## Technologies
 
-React, TypeScript, Vite, Vitest, Lucide React, browser localStorage, Web Speech Recognition (optional), and the Web Crypto API. The visual uses Unicode item and class glyphs so no remote image service or assets are needed.
+React, TypeScript, Vite, Vitest, Lucide React, browser local storage, Web Crypto API for dice, and optional browser Speech Recognition.
 
-## Attribution and license
+## Rules and limitations
 
-The implementation in this `app/` folder was written for LoreMaster and does not copy GameMasterAI source or prompt files. GameMasterAI remains unchanged. Its upstream repository declares MIT in its license file; that license and the README metadata disagree about project licensing, so verify upstream terms before copying its code or assets. This app uses a new MIT license.
+The rules are a small D&D-inspired subset, not a complete implementation of a D&D edition. The game includes eight level-one classes, a limited set of class abilities and equipment, d20 checks, and a fixed demo adventure. Natural-language commands use local keyword handling, so suggested actions and interface buttons are available when phrasing is unclear. Online multiplayer, accounts, cloud saves, and a live AI narrator are not included.
+
+## License and attribution
+
+The `app/` implementation is licensed under MIT; see [LICENSE](LICENSE). GameMasterAI is a separate reference repository. Its code and prompts are not copied into this application.
