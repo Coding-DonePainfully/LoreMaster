@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as game from './game';
-import { demoParty, makeCampaign } from './game';
-import { Command } from './commands';
+import { demoParty, makeCampaign, makeCharacter } from './game';
+import { Command, parseCommand } from './commands';
 import { executeCommand } from './command-engine';
 
 describe('authoritative command execution',()=>{
@@ -9,15 +9,25 @@ describe('authoritative command execution',()=>{
   const c=makeCampaign(demoParty());const result=executeCommand(c,{type:'clarify',question:'Which item?'},'use it');expect(result.campaign).toBe(c);expect(result.reply).toBe('Which item?');
  });
  it('rejects a missing quest item without changing mechanical state',()=>{
-  const c={...makeCampaign(demoParty()),sceneStep:2};const result=executeCommand(c,{type:'use_item',characterId:c.activeId,itemId:'moon-seal'},'use the moon seal');
+  const c={...makeCampaign(demoParty()),location:'chapel',sceneStep:2};const result=executeCommand(c,{type:'use_item',characterId:c.activeId,itemId:'moon-seal'},'use the moon seal');
   expect(result.reply).toMatch(/has not found the moon seal/);expect(result.campaign).toBe(c);expect(result.campaign.sceneStep).toBe(c.sceneStep);expect(result.campaign.guardianHp).toBe(c.guardianHp);expect(result.campaign.characters.map(ch=>ch.inventory)).toEqual(c.characters.map(ch=>ch.inventory));
  });
  it('resolves an attack through application dice and keeps health within bounds',()=>{
   const c={...makeCampaign(demoParty()),sceneStep:2};const action:Command={type:'attack_guardian',characterId:c.activeId};const result=executeCommand(c,action,'attack the guardian');
   expect(result.rollText).toMatch(/d20/);expect(result.campaign.guardianHp).toBeGreaterThanOrEqual(0);expect(result.campaign.guardianHp).toBeLessThanOrEqual(c.guardianHp);expect(result.campaign.characters.every(ch=>ch.hp>=0&&ch.hp<=ch.maxHp)).toBe(true);expect(result.campaign.log.some(entry=>entry.kind==='roll')).toBe(true);
  });
+ it('consumes one action per party member per round and reports blocked repeats',()=>{
+  const hero=makeCharacter('Mira','Wizard');const base=makeCampaign([hero]);const c={...base,location:'chapel',sceneStep:2};
+  const first=executeCommand(c,{type:'attack_guardian',characterId:hero.id},'attack guardian');expect(first.campaign.actedThisTurn).toEqual([hero.id]);
+  const repeat=executeCommand(first.campaign,{type:'attack_guardian',characterId:hero.id},'attack guardian');expect(repeat.campaign).toBe(first.campaign);expect(repeat.reply).toMatch(/already taken an action/);
+  const next=executeCommand(first.campaign,{type:'end_turn',characterId:hero.id},'end turn');expect(next.campaign.actedThisTurn).toEqual([]);
+ });
+ it('takes the party into the crypt for the full Chapel Crypt route name',()=>{
+  const hero=makeCharacter('Mira','Ranger');const base=makeCampaign([hero]);const campaign={...base,location:'chapel',sceneStep:2,guardianHp:0};const parsed=parseCommand('Travel to The Chapel Crypt',campaign);
+  expect(parsed.command.type).toBe('travel_crypt');const result=executeCommand(campaign,parsed.command,'Travel to The Chapel Crypt');expect(result.campaign.location).toBe('crypt');
+ });
  it('uses STR damage, flat armor reduction, and the critical defense and damage rules',()=>{
-  const die=vi.spyOn(game,'randomDie').mockReturnValue(20);const percentile=vi.spyOn(game,'randomPercent').mockReturnValue(1);try{const fighter=game.makeCharacter('Ari','Fighter',{str:20,dex:5,con:5,int:5,wis:5,cha:5});let c=game.makeAdventureCampaign([fighter],'shattered-bell');c={...c,location:'chapel',sceneStep:2};const result=executeCommand(c,{type:'attack_guardian',characterId:fighter.id},'Slash');expect(result.campaign.guardianHp).toBe(0);expect(result.rollText).toMatch(/d100 1 vs 10% - CRITICAL HIT/);expect(result.rollText).toMatch(/damage base 6 \+ 5 STR - 1 armor reduction x1.5 critical = 15/);}finally{die.mockRestore();percentile.mockRestore();}
+  const die=vi.spyOn(game,'randomDie').mockReturnValue(20);const percentile=vi.spyOn(game,'randomPercent').mockReturnValue(1);try{const fighter=game.makeCharacter('Ari','Fighter',{str:20,dex:5,con:5,int:5,wis:5,cha:5});let c=game.makeAdventureCampaign([fighter],'shattered-bell');c={...c,location:'chapel',sceneStep:2};const result=executeCommand(c,{type:'attack_guardian',characterId:fighter.id},'Slash');expect(result.campaign.guardianHp).toBe(0);expect(result.rollText).toMatch(/d100 1 vs 10% - CRITICAL HIT/);expect(result.rollText).toMatch(/damage base 6 \+ 5 STR - 1 armor reduction x1.5 critical = 16/);}finally{die.mockRestore();percentile.mockRestore();}
  });
  it('turns a successful Investigation into the actual clue and reward',()=>{
   const roll=vi.spyOn(game,'randomDie').mockReturnValue(20);
@@ -40,6 +50,20 @@ describe('authoritative command execution',()=>{
   const c={...makeCampaign(demoParty()),location:'chapel' as const,sceneStep:2,guardianHp:8};
   const result=executeCommand(c,{type:'travel_crypt',characterId:c.activeId},'Enter the crypt');
   expect(result.campaign).toBe(c);expect(result.reply).toMatch(/still blocked/i);
+ });
+ it('does not let explicit travel commands bypass the clue gate or teleport into the crypt',()=>{
+  const c=makeCampaign(demoParty());
+  const direct=executeCommand(c,{type:'travel_location',characterId:c.activeId,locationId:'chapel'},'Go to the chapel');
+  expect(direct.campaign).toBe(c);expect(direct.reply).toMatch(/first ask Mara|investigate/i);
+  const crypt=executeCommand({...c,sceneStep:2,guardianHp:0},{type:'travel_crypt',characterId:c.activeId},'Enter the crypt');
+  expect(crypt.campaign.location).toBe('inn');expect(crypt.reply).toMatch(/reached from the hilltop chapel/i);
+ });
+ it('keeps deterministic fallback travel subject to engine route gates',()=>{
+  const c=makeCampaign(demoParty());
+  const parsed=parseCommand('Go to the chapel',c);
+  expect(parsed.command).toMatchObject({type:'travel_chapel'});
+  const executed=executeCommand(c,parsed.command,'Go to the chapel');
+  expect(executed.campaign).toBe(c);expect(executed.reply).toMatch(/First ask Mara|search for the Moon Seal/i);
  });
  it('does not allow chapel travel before Mara or the seal clue establishes the route',()=>{
   const c=makeCampaign(demoParty());const blocked=executeCommand(c,{type:'travel_chapel',characterId:c.activeId},'Go to the chapel');expect(blocked.campaign).toBe(c);expect(blocked.reply).toMatch(/First ask Mara|search for the Moon Seal/i);

@@ -106,6 +106,37 @@ describe('deterministic command interpreter',()=>{
  it('resolves connected Ashen routes and does not suggest Bell content in help',()=>{
   const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);const ashen={...campaign,adventureId:'ashen-expedition' as const,location:'ash-flats'};expect(parseCommand('Move to the lava tube',ashen).command).toMatchObject({type:'travel_location',locationId:'lava-tube'});expect(parseCommand('Cross the bridge',ashen).command).toMatchObject({type:'travel_location',locationId:'bridge'});expect(parseCommand('help',ashen).command.type).toBe('help');
  });
+ it('prefers the full chapel crypt name over the shorter chapel alias and understands further',()=>{
+  const campaign={...makeCampaign([makeCharacter('Mira','Ranger')]),location:'chapel',sceneStep:2,guardianHp:0};
+  expect(parseCommand('Travel to The Chapel Crypt',campaign).command).toMatchObject({type:'travel_crypt'});
+  expect(parseCommand('Go further',campaign).command).toMatchObject({type:'travel_crypt'});
+ });
+ it('treats collecting the named crescent as a search for the hidden seal',()=>{
+  const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);
+  expect(parseCommand('take the crescent moon',campaign).command).toMatchObject({type:'search',characterId:campaign.activeId});
+ });
+ it('recognizes an explicit end-turn command',()=>{
+  const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);expect(parseCommand('End turn',campaign).command).toMatchObject({type:'end_turn'});
+ });
+ it.each([
+  ['Head east.', 'bridge'],['Take the western route.', 'lava-tube'],['Go to the rope bridge.', 'bridge'],
+ ])('uses Ashen route meaning and location aliases for %s', (phrase,locationId)=>{
+  const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);const ashen={...campaign,adventureId:'ashen-expedition' as const,location:'ash-flats'};
+  expect(parseCommand(phrase,ashen).command).toMatchObject({type:'travel_location',locationId});
+ });
+ it('treats an investigation at a named connected scene as travel to that scene',()=>{
+  const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);const masquerade={...campaign,adventureId:'gilded-masquerade' as const,location:'ballroom'};
+  expect(parseCommand('Investigate the crime scene.',masquerade).command).toMatchObject({type:'travel_location',locationId:'gallery'});
+ });
+ it('resolves deeper, back, and named places from the current Shattered Bell location',()=>{
+  const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);
+  const crypt={...campaign,location:'crypt',sceneStep:2,guardianHp:0};
+  expect(parseCommand('Go to the crypt.',{...crypt,location:'chapel',guardianHp:8}).command).toMatchObject({type:'travel_crypt'});
+  expect(parseCommand('Go deeper.',crypt).command).toMatchObject({type:'travel_location',locationId:'deep-crypt'});
+  expect(parseCommand('Go back to the hilltop.',crypt).command).toMatchObject({type:'travel_chapel'});
+  const deep={...crypt,location:'deep-crypt'};
+  expect(parseCommand('Go back.',deep).command).toMatchObject({type:'travel_location',locationId:'crypt'});
+ });
  it('does not route an Ashen attack request to the Shattered Bell guardian',()=>{
   const campaign=makeCampaign([makeCharacter('Mira','Ranger')]);const ashen={...campaign,adventureId:'ashen-expedition' as const,location:'ash-flats'};expect(parseCommand('Attack the guardian',ashen).command).toMatchObject({type:'clarify',question:expect.stringMatching(/no active enemy encounter.*Ashen Expedition/i)});
  });

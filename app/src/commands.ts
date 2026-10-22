@@ -3,6 +3,8 @@ import { adventureById } from './adventures';
 
 export type Command =
  | { type:'switch_character'; characterId:string }
+ | { type:'end_turn'; characterId:string }
+ | { type:'skip_turn'; characterId:string }
  | { type:'show_inventory'|'show_abilities'|'help'; characterId?:string }
  | { type:'ask_mara'; characterId:string }
  | { type:'inspect'; characterId:string }
@@ -42,6 +44,38 @@ export type ModelProposal = {
 export type ParseResult = { command:Command; reason?:string };
 const attrs=['str','dex','con','int','wis','cha'] as const;
 const normalized=(s:string)=>s.toLowerCase().normalize('NFKD').replace(/[’']/g,'').replace(/[^\p{L}\p{N}\s-]/gu,' ').replace(/\b(moonseal|moonseel)\b/g,'moon seal').replace(/\s+/g,' ').trim();
+
+const locationAliases:Record<string,string[]>={
+ 'inn':['wayfarer rest','wayfarers rest','tavern','inn'],chapel:['hilltop','hilltop chapel','shrine'],crypt:['chapel crypt','upper crypt'],
+ 'deep-crypt':['lower reliquary','reliquary','flooded chamber','lower chamber'],
+ ballroom:['gala','gilded ballroom','ball'],gallery:['locked gallery','crime scene','victims room'],conservatory:['garden','glasshouse','greenhouse'],
+ waystation:['cinderwatch','cinderwatch waystation','station'],'ash-flats':['ash field','flats'],bridge:['rope bridge','exposed bridge'],'lava-tube':['tube','lava tunnel','tunnel'],observatory:['ember observatory','beacon','observatory tower']
+};
+function locationMention(text:string,c:Campaign){
+ const n=normalized(text);const adventure=adventureById(c.adventureId);
+ return adventure.locations.flatMap(location=>[location.id,location.id.replace(/-/g,' '),normalized(location.name),...(locationAliases[location.id]??[])].map(alias=>({location,alias:normalized(alias)}))).filter(entry=>entry.alias&&new RegExp(`\\b${entry.alias}\\b`,'i').test(n)).sort((a,b)=>b.alias.length-a.alias.length)[0]?.location;
+}
+function relativeLocation(text:string,c:Campaign){
+ const n=normalized(text);const adventure=adventureById(c.adventureId);const current=adventure.locations.find(location=>location.id===c.location);
+ if(!current)return undefined;
+ if(c.adventureId==='shattered-bell'){
+  if(c.location==='chapel'&&/\b(further|farther|deeper|down|below|descend)\b/.test(n))return adventure.locations.find(location=>location.id==='crypt');
+  if(c.location==='crypt'&&/\b(further|farther|deeper|down|below|continue|lower)\b/.test(n))return adventure.locations.find(location=>location.id==='deep-crypt');
+  if(c.location==='crypt'&&/\b(back|up|return|climb|ascend)\b/.test(n))return adventure.locations.find(location=>location.id==='chapel');
+  if(c.location==='deep-crypt'&&/\b(back|up|return|climb|ascend)\b/.test(n))return adventure.locations.find(location=>location.id==='crypt');
+ }
+ if(c.adventureId==='ashen-expedition'&&c.location==='ash-flats'){
+  if(/\b(east|eastern|bridge route)\b/.test(n))return adventure.locations.find(location=>location.id==='bridge');
+  if(/\b(west|western|tunnel route)\b/.test(n))return adventure.locations.find(location=>location.id==='lava-tube');
+ }
+ if(c.adventureId==='ashen-expedition'&&['bridge','lava-tube'].includes(c.location)&&/\b(back|up|return|backtrack)\b/.test(n))return adventure.locations.find(location=>location.id==='ash-flats');
+ if(c.adventureId==='ashen-expedition'&&c.location==='observatory'&&/\b(back|return|backtrack)\b/.test(n))return adventure.locations.find(location=>location.id==='ash-flats');
+ if(/\b(back|backtrack|return|go back|head back)\b/.test(n)){
+  const previous=adventure.locations.filter(location=>location.next?.includes(current.id));
+  if(previous.length===1)return previous[0];
+ }
+ return undefined;
+}
 
 function actorFor(text:string,c:Campaign,activeId:string){
  const n=normalized(text);const byId=c.characters.find(ch=>ch.id===text.trim());if(byId)return{character:byId};const mentions=c.characters.filter(ch=>{const name=normalized(ch.name);const klass=normalized(ch.className);return (name.length>1&&new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`,'i').test(n))||new RegExp(`\\b${klass}\\b`,'i').test(n);});
@@ -85,6 +119,8 @@ export function parseCommand(text:string,c:Campaign,activeId=c.activeId):ParseRe
  const explicitActor=n.match(/\b(?:have|let|switch(?: to)?|change(?: to)?|play as|select|take over as)\s+(?:the\s+|a\s+)?([a-z][a-z'-]*)\b/);if(explicitActor&&!c.characters.some(ch=>normalized(ch.name)===explicitActor[1]||normalized(ch.className)===explicitActor[1]))return clarify(`I can’t find ${explicitActor[1]} in this party. Which character should act?`,'unavailable-character');
  const actor=actorFor(n,c,activeId);if(actor.ambiguous)return clarify('Which party member should take this action?','ambiguous-character');const character=actor.character!;
  const actorId=character.id;
+ if(/^(?:skip(?: turn)?|pass(?: turn)?|wait|do nothing)$/.test(n))return{command:{type:'skip_turn',characterId:actorId}};
+ if(/^(?:end turn|finish turn|pass turn|end my turn)$/.test(n))return{command:{type:'end_turn',characterId:actorId}};
  const switched=/\b(switch|change|play as|select|take over as)\b/.test(n);
  if(switched){if(/\b(?:inventory|character|tab|panel)\b/.test(n))return{command:{type:'switch_character',characterId:actorId}};return{command:{type:'switch_character',characterId:actorId}};}
  const knownAbility=character.abilities.find(a=>normalized(a.name).length>2&&n.includes(normalized(a.name)));
@@ -102,11 +138,13 @@ export function parseCommand(text:string,c:Campaign,activeId=c.activeId):ParseRe
   return{command:{type:'narrative_question',answer},reason:'narrative-question'};
  }
  const adventure=adventureById(c.adventureId);
+ if(adventure.id==='shattered-bell'&&/\b(take|take up|get|pick up|collect|claim)\b/.test(n)&&/\b(moon seal|moon|crescent|silver seal)\b/.test(n)&&!c.characters.some(ch=>ch.inventory.some(stack=>stack.itemId==='moon-seal'&&stack.quantity>0)))return{command:{type:'search',characterId:actorId}};
  if(adventure.id==='ashen-expedition'&&/\b(secure|tie|fix|repair|mend|lash)\b/.test(n)&&/\b(bridge|ropes?)\b/.test(n))return{command:{type:'secure_bridge',characterId:actorId}};
- const requestedLocation=adventure.locations.find(location=>location.id!==c.location&&normalized(location.name).split(' ').some(word=>word.length>3&&n.includes(word)));
- if(adventure.id==='ashen-expedition'&&requestedLocation&&requestedLocation.id==='bridge'&&/\b(investigate|inspect|examine|search)\b/.test(n)&&adventure.locations.find(location=>location.id===c.location)?.next?.includes('bridge'))return{command:{type:'travel_location',characterId:actorId,locationId:'bridge'}};
- if(adventure.id!=='shattered-bell'&&requestedLocation&&/\b(go|travel|head|walk|move|journey|enter|descend|return|cross|take)\b/.test(n))return{command:{type:'travel_location',characterId:actorId,locationId:requestedLocation.id}};
- if(adventure.id==='shattered-bell'&&requestedLocation&&requestedLocation.id==='deep-crypt'&&/\b(go|travel|head|walk|move|journey|enter|descend|continue)\b/.test(n))return{command:{type:'travel_location',characterId:actorId,locationId:requestedLocation.id}};
+ const requestedLocation=locationMention(n,c)??relativeLocation(n,c);
+ if(adventure.id!=='shattered-bell'&&requestedLocation&&requestedLocation.id!==c.location&&/\b(investigate|inspect|examine|search)\b/.test(n)&&adventure.locations.find(location=>location.id===c.location)?.next?.includes(requestedLocation.id))return{command:{type:'travel_location',characterId:actorId,locationId:requestedLocation.id}};
+ if(adventure.id==='shattered-bell'&&requestedLocation?.id==='chapel'&&/\b(go|travel|head|walk|move|journey|enter|return|back|backtrack)\b/.test(n))return{command:{type:'travel_chapel',characterId:actorId}};
+ if(adventure.id==='shattered-bell'&&requestedLocation?.id==='crypt'&&/\b(go|travel|head|walk|move|journey|enter|descend|return|back|backtrack|up|ascend|climb)\b/.test(n))return c.location==='deep-crypt'?{command:{type:'travel_location',characterId:actorId,locationId:'crypt'}}:{command:{type:'travel_crypt',characterId:actorId}};
+ if(requestedLocation&&requestedLocation.id!==c.location&&/\b(go|travel|head|walk|move|journey|enter|descend|return|cross|take|back|backtrack|continue|further|farther|deeper|down|below|up|ascend|climb)\b/.test(n))return{command:{type:'travel_location',characterId:actorId,locationId:requestedLocation.id}};
  if(adventure.id!=='shattered-bell'){
   const requestedNpc=adventure.npcs.find(npc=>new RegExp(`\\b${npc.name.toLowerCase()}\\b`,'i').test(n));
   if(requestedNpc&&/\b(ask|talk|speak|question|tell|know|about)\b/.test(n))return{command:{type:'ask_mara',characterId:actorId}};
@@ -129,7 +167,7 @@ export function parseCommand(text:string,c:Campaign,activeId=c.activeId):ParseRe
   if(itemRef.itemId){const id=itemRef.itemId;if(/\b(equip|wear|wield)\b/.test(n))return{command:{type:'equip_item',characterId:actorId,itemId:id}};if(/\b(drop|discard)\b/.test(n))return{command:{type:'drop_item',characterId:actorId,itemId:id}};return{command:{type:'use_item',characterId:actorId,itemId:id}};}
   if(/\b(use|drink|consume|heal|give|hand|offer|present|place|deliver|calm|soothe)\b/.test(n))return clarify('Which item should I use? You can name the Moon Seal, potion, or another item.','ambiguous-item');
  }
- const attack=n.match(/\b(attack|fight|strike|swing|hit|shoot)\b/);if(attack){const tail=n.slice((attack.index??0)+attack[0].length).trim().replace(/^(?:at|the|a|an)\s+/,'').replace(/^(?:with|using)\b.*$/,'');if(adventure.id!=='shattered-bell')return clarify(`There is no active enemy encounter in ${adventure.title} at ${adventure.locations.find(location=>location.id===c.location)?.name??c.location}. You can inspect, investigate, talk to someone here, or travel along a connected route.`,'unavailable-target');if(c.guardianHp<=0)return clarify('The stone guardian is already defeated. Descend into the open crypt stairs.','unavailable-target');if(c.location!=='chapel')return clarify('The stone guardian is at the hilltop chapel. Establish the route by asking Mara or finding the Moon Seal clue, then travel there.','unavailable-target');if(tail&&!/\b(guardian|stone creature|it|him|her|foe|enemy)\b/.test(tail))return clarify('There is no matching target in this adventure. The current encounter is the stone guardian.','unavailable-target');return{command:{type:'attack_guardian',characterId:actorId}};}
+ const attack=n.match(/\b(attack|fight|strike|swing|hit|shoot|slash|stab)\b/);if(attack){const tail=n.slice((attack.index??0)+attack[0].length).trim().replace(/^(?:at|the|a|an)\s+/,'').replace(/^(?:with|using)\b.*$/,'');if(adventure.id!=='shattered-bell')return clarify(`There is no active enemy encounter in ${adventure.title} at ${adventure.locations.find(location=>location.id===c.location)?.name??c.location}. You can inspect, investigate, talk to someone here, or travel along a connected route.`,'unavailable-target');if(c.guardianHp<=0)return clarify('The stone guardian is already defeated. Descend into the open crypt stairs.','unavailable-target');if(c.location!=='chapel')return clarify('The stone guardian is at the hilltop chapel. Establish the route by asking Mara or finding the Moon Seal clue, then travel there.','unavailable-target');if(tail&&!/\b(guardian|stone creature|it|him|her|foe|enemy)\b/.test(tail))return clarify('There is no matching target in this adventure. The current encounter is the stone guardian.','unavailable-target');return{command:{type:'attack_guardian',characterId:actorId}};}
  if(/\b(search|investigate|examine|look into|look for|check for clues|inspect closely|probe|scan)\b/.test(n)){
   if(/\b(chapel|guardian|crypt)\b/.test(n)&&c.sceneStep<2)return{command:{type:'travel_chapel',characterId:actorId}};
   return{command:{type:'search',characterId:actorId}};

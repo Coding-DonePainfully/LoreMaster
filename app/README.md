@@ -103,7 +103,11 @@ Supported commands include asking Mara about the bell, inspecting or searching, 
 
 The game uses a small original D&D-inspired rules subset, not a complete D&D edition. The adventure and narrator are local and fixed; an LLM improves request interpretation only. localStorage is device/browser-local and not encrypted or synchronized. Speech recognition is optional and browser-dependent; text input works everywhere.
 
-LoreMaster is a simulated conversational experience. It is **not connected to Amazon Alexa+** and does not use an official Alexa+ SDK, partner tools, Agent Skill, or MCP server. Confirm current eligibility and submission rules with the official hackathon organizers.
+### Alexa+ hackathon framing
+
+LoreMaster is a browser-based **simulation of a conversational Alexa+ tabletop adventure**. It is intended to show how a high-level conversational model can make natural player requests and narration feel flexible while a deterministic game engine remains authoritative for dice, combat, inventory, clues, and objectives. A stronger model could improve interpretation of varied player phrasing and context-aware narration; the current demo remains playable with its deterministic parser and does not depend on a model.
+
+This is a **simulated Alexa+ experience**, not a live Alexa+ integration. It is not connected to an Alexa+ device and does not use the official Alexa+ SDK or partner-only tools, Agent Skill, or MCP server. The demo should be presented as a web simulation for the Alexa+ track, with that boundary stated clearly.
 
 ## Troubleshooting
 
